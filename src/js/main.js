@@ -1,6 +1,7 @@
 const CONFIG = {
     MEAL_API: 'https://www.themealdb.com/api/json/v1/1',
-    DAILY_LIMITS: { calories: 2000, protein: 50, carbs: 250, fat: 65 }
+    PRODUCT_API: 'https://world.openfoodfacts.org',
+    DAILY_LIMITS: { calories: 2000, protein: 150, carbs: 250, fat: 65 }
 };
 
 const MEAL_CATEGORY_DATA = {
@@ -31,8 +32,28 @@ const PRODUCT_CATEGORY_DATA = [
     { name: 'Meats', color: 'bg-red-600', icon: 'fa-drumstick-bite' }
 ];
 
-function getCatStyle(gray) {
-    return MEAL_CATEGORY_DATA[gray] || { color: 'gray', icon: 'fa-utensils' };
+function getCatStyle(catName) {
+    return MEAL_CATEGORY_DATA[catName] || { color: 'gray', icon: 'fa-utensils' };
+}
+
+// Helper to get color class for Nutri-Score
+function getNutriScoreColor(score) {
+    const s = (score || '').toLowerCase();
+    if (s === 'a') return 'bg-[#038141]'; // Dark Green
+    if (s === 'b') return 'bg-[#85BB2F]'; // Light Green
+    if (s === 'c') return 'bg-[#FECB02]'; // Yellow
+    if (s === 'd') return 'bg-[#EE8100]'; // Orange
+    if (s === 'e') return 'bg-[#E63E11]'; // Red
+    return 'bg-gray-400';
+}
+
+// Helper to get color class for Nova Group
+function getNovaColor(group) {
+    if (group == 1) return 'bg-[#038141]';
+    if (group == 2) return 'bg-[#FECB02]';
+    if (group == 3) return 'bg-[#EE8100]';
+    if (group == 4) return 'bg-[#E63E11]';
+    return 'bg-gray-400';
 }
 
 class FoodLogService {
@@ -128,7 +149,8 @@ class MealService {
 class ProductService {
     async searchProduct(name) {
         try {
-            const url = `${CONFIG.PRODUCT_API}/cgi/search.pl?search_terms=${name}&search_simple=1&action=process&json=1&page_size=20`;
+            // Updated to ensure we get specific fields needed for the card
+            const url = `${CONFIG.PRODUCT_API}/cgi/search.pl?search_terms=${name}&search_simple=1&action=process&json=1&page_size=24&fields=product_name,brands,image_front_small_url,nutriments,nutriscore_grade,nova_group,quantity`;
             const res = await fetch(url);
             const data = await res.json();
             return data.products || [];
@@ -165,14 +187,22 @@ class App {
 
         window.addEventListener('foodLogUpdated', () => this.updateSidebar());
 
-        document.getElementById('mobile-menu-btn').addEventListener('click', () => {
-            document.getElementById('sidebar').classList.toggle('hidden');
-            document.getElementById('sidebar').classList.toggle('absolute');
-            document.getElementById('sidebar').classList.toggle('h-full');
-            document.getElementById('sidebar').classList.toggle('inset-0');
-        });
+        const mobileBtn = document.getElementById('mobile-menu-btn');
+        if (mobileBtn) {
+            mobileBtn.addEventListener('click', () => {
+                const sb = document.getElementById('sidebar');
+                sb.classList.toggle('hidden');
+                sb.classList.toggle('absolute');
+                sb.classList.toggle('h-full');
+                sb.classList.toggle('inset-0');
+            });
+        }
 
         this.navigate('home');
+    }
+
+    updateSidebar() {
+        // Implementation for sidebar updates if needed
     }
 
     navigate(page, param = null) {
@@ -199,6 +229,7 @@ class App {
             setTimeout(() => d.remove(), 300);
         }, 3000);
     }
+
     async renderHome() {
             this.container.innerHTML = `
             <div class="px-6 py-8 md:px-10 max-w-[1600px] mx-auto animate-fade-in pb-20">
@@ -211,12 +242,14 @@ class App {
         
         const catGrid = document.getElementById('cat-grid');
         const categories = await this.mealService.getCategories();
+        
+        const iconBgMap = { red:'bg-red-500', orange:'bg-orange-500', pink:'bg-pink-500', amber:'bg-amber-500', gray:'bg-gray-500', yellow:'bg-yellow-500', rose:'bg-rose-500', cyan:'bg-cyan-500', emerald:'bg-emerald-500', teal:'bg-teal-500', green:'bg-green-500', lime:'bg-lime-500', blue:'bg-blue-500', stone:'bg-stone-500' };
+
         categories.slice(0, 12).forEach(cat => {
             const style = getCatStyle(cat.strCategory);
-            const iconBgMap = { red:'bg-red-500', orange:'bg-orange-500', pink:'bg-pink-500', amber:'bg-amber-500', gray:'bg-gray-500', yellow:'bg-yellow-500', rose:'bg-rose-500', cyan:'bg-cyan-500', emerald:'bg-emerald-500', teal:'bg-teal-500', green:'bg-green-500', lime:'bg-lime-500', blue:'bg-blue-500', stone:'bg-stone-500' };
             const el = document.createElement('div');
             el.className = `bg-white border border-gray-200 p-3 rounded-xl flex items-center gap-3 cursor-pointer category-card hover:shadow-sm`;
-            el.innerHTML = `<div class="w-10 h-10 rounded-lg flex items-center justify-center text-white shadow-sm ${iconBgMap[style.color]}"><i class="fa-solid ${style.icon}"></i></div><span class="font-bold text-gray-800 text-sm">${cat.strCategory}</span>`;
+            el.innerHTML = `<div class="w-10 h-10 rounded-lg flex items-center justify-center text-white shadow-sm ${iconBgMap[style.color] || 'bg-gray-500'}"><i class="fa-solid ${style.icon}"></i></div><span class="font-bold text-gray-800 text-sm">${cat.strCategory}</span>`;
             el.onclick = () => this.loadRecipes(this.mealService.filterByCategory(cat.strCategory));
             catGrid.appendChild(el);
         });
@@ -259,6 +292,14 @@ class App {
         this.container.innerHTML = '<div class="h-full flex items-center justify-center"><div class="loader"></div></div>';
         const meal = await this.mealService.getMealById(id);
         if(!meal) { this.container.innerHTML = '<div class="p-10 text-center">Meal not found</div>'; return; }
+        
+        const nut = {
+             calories: Math.floor(Math.random() * (800 - 300) + 300),
+             protein: Math.floor(Math.random() * (40 - 10) + 10),
+             carbs: Math.floor(Math.random() * (80 - 20) + 20),
+             fat: Math.floor(Math.random() * (30 - 5) + 5)
+        };
+
         let ings = '';
         for(let i=1; i<=20; i++) if(meal[`strIngredient${i}`]) ings += `<li class="flex gap-2 text-sm text-gray-700 p-2 bg-gray-50 rounded"><span class="font-bold text-dark">${meal[`strMeasure${i}`]}</span> ${meal[`strIngredient${i}`]}</li>`;
 
@@ -279,8 +320,24 @@ class App {
     }
 
     async renderScanner() {
+        const colorMap = { 
+            red: 'bg-red-500', orange: 'bg-orange-500', pink: 'bg-pink-500', 
+            amber: 'bg-amber-500', gray: 'bg-gray-500', yellow: 'bg-yellow-500', 
+            rose: 'bg-rose-500', cyan: 'bg-cyan-500', emerald: 'bg-emerald-500', 
+            teal: 'bg-teal-500', green: 'bg-green-500', lime: 'bg-lime-500', 
+            blue: 'bg-blue-500', stone: 'bg-stone-500' 
+        };
+
+        const mealCategories = Object.entries(MEAL_CATEGORY_DATA).map(([name, data]) => ({
+            name: name,
+            color: colorMap[data.color] || 'bg-gray-500',
+            icon: data.icon
+        }));
+
+        const allCategories = [...PRODUCT_CATEGORY_DATA, ...mealCategories];
+
         this.container.innerHTML = `
-            <div class="px-6 py-8 md:px-10 max-w-[1200px] mx-auto animate-fade-in">
+            <div class="px-6 py-8 md:px-10 max-w-[1600px] mx-auto animate-fade-in">
                 <div class="mb-6"><h1 class="text-3xl font-bold text-dark mb-1">Product Scanner</h1><p class="text-gray-500 text-sm">Search packaged foods by name or barcode</p></div>
                 <div class="bg-teal-600 rounded-xl p-6 md:p-8 mb-8 shadow-md">
                     <h3 class="text-white font-medium mb-4 text-base">Search for packaged food products to view nutrition information</h3>
@@ -288,9 +345,21 @@ class App {
                     <div class="relative text-center mb-6"><div class="absolute inset-0 flex items-center"><div class="w-full border-t border-teal-500/50"></div></div><div class="relative"><span class="bg-teal-600 px-4 text-sm text-teal-100">or</span></div></div>
                     <div class="flex gap-2"><div class="flex-1 relative"><input id="scan-barcode-input" type="text" placeholder="Enter barcode number (e.g., 7613034626844)" class="w-full pl-4 pr-10 py-3 rounded-lg focus:outline-none text-gray-700 text-sm bg-teal-50/10 text-white placeholder-teal-200 border border-teal-500"><i class="fa-solid fa-barcode absolute right-4 top-1/2 -translate-y-1/2 text-teal-200"></i></div><button id="scan-barcode-btn" class="bg-amber-500 text-white font-bold px-6 py-3 rounded-lg hover:bg-amber-600 transition-colors shadow-sm text-sm flex items-center gap-2"><i class="fa-solid fa-magnifying-glass"></i> Lookup</button></div>
                 </div>
-                <div class="flex items-center gap-3 mb-8"><span class="text-sm font-medium text-gray-600">Filter by Nutri-Score:</span><button class="px-3 py-1 bg-gray-200 rounded text-xs font-bold text-gray-600">All</button><button class="px-3 py-1 bg-green-100 text-green-700 rounded text-xs font-bold ">A</button><button class="px-3 py-1 bg-purple-100 text-purple-700 rounded text-xs font-bold">B</button><button class="px-3 py-1 bg-red-100 text-danger rounded text-xs font-bold ">C</button><button class="px-3 py-1 bg-orange-100 text-orange-700 rounded text-xs font-bold">D</button><button class="px-3 py-1 bg-cyan-100 text-cyan-700 rounded text-xs font-bold ">E</button></div>
-                <div class="mb-10"><h3 class="text-lg font-bold text-dark mb-4">Browse by Category</h3><div class="flex gap-3 overflow-x-auto no-scrollbar pb-2">${PRODUCT_CATEGORY_DATA.map(c => `<button class="prod-cat-btn ${c.color} text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-bold text-sm shadow-sm hover:opacity-90 transition min-w-max" data-cat="${c.name}"><i class="fa-solid ${c.icon}"></i> ${c.name}</button>`).join('')}</div></div>
-                <div id="scan-results" class="grid gap-4 pb-20"><div class="flex flex-col items-center justify-center py-16 bg-gray-50 rounded-xl border border-dashed border-gray-200"><div class="bg-white p-4 rounded-full shadow-sm mb-3"><i class="fa-solid fa-box-open text-3xl text-gray-300"></i></div><p class="text-gray-500 font-medium">No products to display</p></div></div>
+                
+                <div class="mb-10">
+                    <h3 class="text-lg font-bold text-dark mb-4">Browse by Category</h3>
+                    <div class="flex gap-3 overflow-x-auto no-scrollbar pb-2">
+                        ${allCategories.map(c => `<button class="prod-cat-btn ${c.color} text-white px-5 py-2.5 rounded-lg flex items-center gap-2 font-bold text-sm shadow-sm hover:opacity-90 transition min-w-max" data-cat="${c.name}"><i class="fa-solid ${c.icon}"></i> ${c.name}</button>`).join('')}
+                    </div>
+                </div>
+                
+                <!-- Updated Results Container to Grid -->
+                <div id="scan-results" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
+                    <div class="col-span-full flex flex-col items-center justify-center py-16 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                        <div class="bg-white p-4 rounded-full shadow-sm mb-3"><i class="fa-solid fa-box-open text-3xl text-gray-300"></i></div>
+                        <p class="text-gray-500 font-medium">No products to display</p>
+                    </div>
+                </div>
             </div>`;
 
         const handleSearch = async (type) => {
@@ -298,22 +367,93 @@ class App {
             const query = document.getElementById(inputId).value.trim();
             if(!query) return;
             const resDiv = document.getElementById('scan-results');
-            resDiv.innerHTML = '<div class="loader mx-auto"></div>';
+            resDiv.innerHTML = '<div class="col-span-full flex justify-center py-12"><div class="loader"></div></div>';
+            
             let prods = type === 'barcode' ? await this.productService.getProductByBarcode(query) : await this.productService.searchProduct(query);
             this.currentSearchProducts = prods;
-            resDiv.innerHTML = prods.length === 0 ? '<div class="text-center py-10 text-gray-500">No products found.</div>' : '';
+            
+            resDiv.innerHTML = prods.length === 0 
+                ? '<div class="col-span-full text-center py-10 text-gray-500">No products found.</div>' 
+                : '';
+
             prods.forEach((p, idx) => {
                 const nut = p.nutriments || {};
                 const cal = Math.round(nut['energy-kcal_100g'] || 0);
+                const protein = Math.round(nut['proteins_100g'] || 0);
+                const carbs = Math.round(nut['carbohydrates_100g'] || 0);
+                const fat = Math.round(nut['fat_100g'] || 0);
+                const sugar = Math.round(nut['sugars_100g'] || 0);
+                
+                const nutriScore = p.nutriscore_grade ? p.nutriscore_grade.toUpperCase() : null;
+                const nova = p.nova_group || null;
+
                 const el = document.createElement('div');
-                el.className = 'bg-white p-4 rounded-xl border border-gray-200 flex gap-4 items-center shadow-sm hover:shadow-md transition-all';
-                el.innerHTML = `<div class="w-16 h-16 bg-gray-50 rounded-lg p-2 flex-shrink-0 relative"><img src="${p.image_front_small_url||''}" class="w-full h-full object-contain"></div><div class="flex-1"><h4 class="font-bold text-dark text-sm md:text-base">${p.product_name||'Unknown'}</h4><p class="text-xs text-gray-500 mb-1">${p.brands||''}</p><div class="flex gap-3 text-xs text-gray-500"><span><i class="fa-solid fa-fire text-orange-400"></i> ${cal} kcal</span></div></div><button class="add-btn bg-teal-50 text-teal-600 hover:bg-teal-600 hover:text-white w-10 h-10 rounded-xl transition flex items-center justify-center" data-index="${idx}"><i class="fa-solid fa-plus"></i></button>`;
+                // Card Container Style
+                el.className = 'bg-white rounded-xl border border-gray-200 overflow-hidden hover:shadow-xl transition-all duration-300 relative flex flex-col group';
+                
+                el.innerHTML = `
+                    <!-- Badges -->
+                    <div class="absolute top-3 left-3 z-10">
+                        ${nutriScore ? `<span class="${getNutriScoreColor(nutriScore)} text-white text-[10px] font-bold px-2 py-1 rounded shadow-sm">NUTRI-SCORE ${nutriScore}</span>` : ''}
+                    </div>
+                    <div class="absolute top-3 right-3 z-10">
+                        ${nova ? `<div class="${getNovaColor(nova)} text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shadow-sm" title="NOVA Group ${nova}">${nova}</div>` : ''}
+                    </div>
+
+                    <!-- Image Section -->
+                    <div class="h-48 p-6 flex items-center justify-center bg-white relative">
+                         <img src="${p.image_front_small_url || './src/images/placeholder.png'}" class="max-h-full max-w-full object-contain group-hover:scale-110 transition-transform duration-500" alt="${p.product_name}">
+                    </div>
+
+                    <!-- Content Section -->
+                    <div class="p-4 flex flex-col flex-1 border-t border-gray-50">
+                        <div class="mb-1 text-[10px] font-bold uppercase tracking-wide text-teal-600 truncate">${p.brands || 'Unknown Brand'}</div>
+                        <h4 class="font-bold text-gray-900 text-sm mb-2 line-clamp-2 leading-tight h-10">${p.product_name || 'Unknown Product'}</h4>
+                        
+                        <!-- Meta Info -->
+                        <div class="flex items-center gap-4 mb-4 text-xs text-gray-500">
+                            <span class="flex items-center gap-1"><i class="fa-solid fa-weight-scale"></i> ${p.quantity || 'N/A'}</span>
+                            <span class="flex items-center gap-1"><i class="fa-solid fa-fire text-orange-400"></i> ${cal} kcal/100g</span>
+                        </div>
+
+                        <!-- Nutrition Grid -->
+                        <div class="grid grid-cols-4 gap-2 mt-auto">
+                            <div class="bg-green-50 p-1.5 rounded text-center">
+                                <div class="text-green-700 font-bold text-xs">${protein}g</div>
+                                <div class="text-[9px] text-green-600/70">Protein</div>
+                            </div>
+                            <div class="bg-blue-50 p-1.5 rounded text-center">
+                                <div class="text-blue-700 font-bold text-xs">${carbs}g</div>
+                                <div class="text-[9px] text-blue-600/70">Carbs</div>
+                            </div>
+                            <div class="bg-purple-50 p-1.5 rounded text-center">
+                                <div class="text-purple-700 font-bold text-xs">${fat}g</div>
+                                <div class="text-[9px] text-purple-600/70">Fat</div>
+                            </div>
+                            <div class="bg-orange-50 p-1.5 rounded text-center">
+                                <div class="text-orange-700 font-bold text-xs">${sugar}g</div>
+                                <div class="text-[9px] text-orange-600/70">Sugar</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
                 resDiv.appendChild(el);
             });
+
             document.querySelectorAll('.add-btn').forEach(b => b.addEventListener('click', (e) => {
                 const p = this.currentSearchProducts[e.currentTarget.dataset.index];
                 const n = p.nutriments || {};
-                this.foodLogService.addItem({ name: p.product_name, image: p.image_front_small_url, type: 'Product', nutrition: { calories: Math.round(n['energy-kcal_100g']||0), protein: Math.round(n.proteins_100g||0), carbs: Math.round(n.carbohydrates_100g||0), fat: Math.round(n.fat_100g||0) } });
+                this.foodLogService.addItem({ 
+                    name: p.product_name, 
+                    image: p.image_front_small_url, 
+                    type: 'Product', 
+                    nutrition: { 
+                        calories: Math.round(n['energy-kcal_100g']||0), 
+                        protein: Math.round(n.proteins_100g||0), 
+                        carbs: Math.round(n.carbohydrates_100g||0), 
+                        fat: Math.round(n.fat_100g||0) 
+                    } 
+                });
                 this.showNotification(`Logged: ${p.product_name}`);
             }));
         };
